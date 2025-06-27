@@ -350,7 +350,7 @@ public class GeotabDataService {
         List<StatusData> newOdometerStatusData = Collections.emptyList();
 
         GeotabApiRequest.Params params = new GeotabApiRequest.Params();
-        params.setTypeName(LOG_RECORD_FEED_TYPE);
+        params.setTypeName(STATUS_DATA_FEED_TYPE);
 
         String fromVersion = lastProcessedVersions.computeIfAbsent(device.getId(), k -> new ConcurrentHashMap<>())
                 .get(STATUS_DATA_FEED_TYPE);
