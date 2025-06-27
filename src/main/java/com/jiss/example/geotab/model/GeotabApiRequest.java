@@ -1,6 +1,7 @@
 package com.jiss.example.geotab.model;
 
 import java.util.Map;
+import com.fasterxml.jackson.annotation.JsonInclude;
 
 /**
  * Helper class to build the JSON-RPC 2.0 request payload for Geotab API calls.
@@ -16,9 +17,15 @@ public class GeotabApiRequest {
 
     public static class Params {
         private String typeName;
+
+        @JsonInclude(JsonInclude.Include.NON_NULL)
         private Object search; // or specific type if needed
         private LoginResult.Credentials credentials;
+
+        @JsonInclude(JsonInclude.Include.NON_NULL)
         private String fromVersion;
+
+        @JsonInclude(JsonInclude.Include.NON_DEFAULT)
         private int resultsLimit;
 
         public String getTypeName() {

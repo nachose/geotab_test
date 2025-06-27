@@ -269,6 +269,8 @@ public class GeotabDataService {
         // Max results per call, important for large data sets
         params.setResultsLimit(50000); // Max for LogRecord is 50,000
 
+        params.setCredentials(getAuthenticatedCredentials());
+
         // Create the API request
         GeotabApiRequest request = new GeotabApiRequest("GetFeed", params);
 
