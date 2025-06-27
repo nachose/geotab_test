@@ -6,6 +6,8 @@ import com.jiss.example.geotab.model.LoginResponse;
 import com.jiss.example.geotab.model.LoginResult;
 import com.jiss.example.geotab.model.LogRecord;
 import com.jiss.example.geotab.model.FeedResult;
+import com.jiss.example.geotab.model.StatusData;
+import com.jiss.example.geotab.model.EnrichedLogRecord;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.type.TypeFactory;
@@ -19,21 +21,24 @@ import org.eclipse.microprofile.rest.client.inject.RestClient;
 import com.opencsv.CSVWriter;
 
 import jakarta.enterprise.context.ApplicationScoped;
-import java.io.File;
+
 import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.stream.Collectors;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 
 /**
  * Main service for interacting with the Geotab API and managing vehicle data backup.
@@ -42,9 +47,16 @@ import java.util.stream.Collectors;
 @ApplicationScoped
 public class GeotabDataService {
 
+
     private static final String LOG_RECORD_FEED_TYPE = "LogRecord";
+    private static final String STATUS_DATA_FEED_TYPE = "StatusData";
+    private static final String DIAGNOSTIC_ODOMETER_ID = "DiagnosticOdometerId";
     private static final String VERSIONS_FILE_NAME = "last_processed_versions.json";
     private static final DateTimeFormatter ISO_Z_FORMATTER = DateTimeFormatter.ISO_INSTANT; // For Z-ending timestamps
+
+    // Define a threshold for matching odometer readings (e.g., within 5 seconds)
+    private static final Duration ODOMETER_MATCH_THRESHOLD = Duration.ofSeconds(10);
+
 
 
     @RestClient
@@ -63,13 +75,12 @@ public class GeotabDataService {
     String outputDirectory;
 
 
-    // --- NEW: Field to store the session ID ---
     private String sessionId;
 
-    // We'll manage discovered devices here (Phase 1)
+    // We'll manage discovered devices here
     private final Map<String, Device> discoveredVehicles = new ConcurrentHashMap<>();
 
-    // This map will store the last processed version for each feed type per vehicle (Phase 2)
+    // This map will store the last processed version for each feed type per vehicle
     // Key: vehicleId, Value: Map<FeedTypeName, LastVersionString>
     private final Map<String, Map<String, String>> lastProcessedVersions = new ConcurrentHashMap<>();
 
@@ -137,7 +148,6 @@ public class GeotabDataService {
         }
     }
 
-    // --- Version Persistence Methods ---
     private Path getVersionsFilePath() {
         return Paths.get(outputDirectory, VERSIONS_FILE_NAME);
     }
@@ -214,7 +224,7 @@ public class GeotabDataService {
      * Runs every minute based on 'geotab.backup.schedule' cron expression.
      */
     @Scheduled(cron = "{geotab.backup.schedule}")
-    void backupLogRecords() {
+    void backupVehicleData() {
         System.out.println("\n--- Starting scheduled LogRecord backup (" + OffsetDateTime.now() + ") ---");
         if (discoveredVehicles.isEmpty()) {
             System.out.println("No vehicles discovered. Skipping LogRecord backup.");
@@ -223,7 +233,22 @@ public class GeotabDataService {
 
         try {
             for (Device device : discoveredVehicles.values()) {
-                processLogRecordsForVehicle(device);
+                System.out.println("\nProcessing data for Device ID: " + device.getId() + " (" + device.getName() + ")");
+
+                // 1. Fetch new LogRecords
+                List<LogRecord> newLogRecords = processLogRecordsForVehicle(device);
+
+                // 2. Fetch new StatusData (Odometer)
+                List<StatusData> newOdometerStatusData = processStatusDataForVehicle(device);
+
+                // 3. Merge and append to final CSV
+                if (!newLogRecords.isEmpty()) {
+                    List<EnrichedLogRecord> enrichedRecords = matchLogRecordsWithOdometer(device, newLogRecords, newOdometerStatusData);
+                    appendEnrichedRecordsToCsv(device, enrichedRecords);
+                } else {
+                    System.out.println("  No new LogRecords to enrich for Device ID: " + device.getId());
+                }
+                //processLogRecordsForVehicle(device);
             }
             saveLastProcessedVersions(); // Save state after processing all vehicles
             System.out.println("--- LogRecord backup completed ---");
@@ -236,11 +261,15 @@ public class GeotabDataService {
 
     /**
      * Processes LogRecord data for a single vehicle using GetFeed.
+     *
      * @param device The Device object to process.
+     * @return
      * @throws IOException If an API or file operation error occurs.
      */
-    private void processLogRecordsForVehicle(Device device) throws IOException {
+    private List<LogRecord> processLogRecordsForVehicle(Device device) throws IOException {
         System.out.println("Processing LogRecords for Device ID: " + device.getId() + " (" + device.getName() + ")");
+
+        List<LogRecord> newLogRecords = Collections.emptyList();
 
         GeotabApiRequest.Params params = new GeotabApiRequest.Params();
         params.setTypeName(LOG_RECORD_FEED_TYPE);
@@ -285,15 +314,11 @@ public class GeotabDataService {
                     typeFactory.constructParametricType(FeedResult.class, LogRecord.class)
             );
 
-            List<LogRecord> newLogRecords = feedResult.getData();
+            newLogRecords = feedResult.getData();
             String newToVersion = feedResult.getToVersion();
 
             if (newLogRecords != null && !newLogRecords.isEmpty()) {
                 System.out.println("  Retrieved " + newLogRecords.size() + " new LogRecords.");
-                appendLogRecordsToCsv(device, newLogRecords);
-                // Update the last processed version
-                lastProcessedVersions.computeIfAbsent(device.getId(), k -> new ConcurrentHashMap<>())
-                        .put(LOG_RECORD_FEED_TYPE, newToVersion);
             } else {
                 System.out.println("  No new LogRecords found.");
             }
@@ -304,50 +329,179 @@ public class GeotabDataService {
                         .put(LOG_RECORD_FEED_TYPE, newToVersion);
             }
 
-
         } else if (responseNode.has("error")) {
             System.err.println("  Error fetching LogRecords for device " + device.getId() + ": " + responseNode.get("error").toString());
         } else {
             System.err.println("  Unexpected API response for device " + device.getId() + ": " + responseNode.toString());
         }
+
+        return newLogRecords;
     }
 
     /**
-     * Appends new LogRecord data to the vehicle's CSV file.
-     * The CSV format for this phase is: Vehicle ID, Timestamp, Latitude, Longitude.
-     * VIN and Odometer will be added in a later merging phase.
+     * Fetches new StatusData (Odometer) for a single vehicle using GetFeed.
+     * @param device The Device object to process.
+     * @return List of newly retrieved StatusData objects filtered for Odometer.
+     * @throws IOException If an API error occurs.
+     */
+    private List<StatusData> processStatusDataForVehicle(Device device) throws IOException {
+        System.out.println("  Fetching Odometer StatusData...");
+
+        List<StatusData> newOdometerStatusData = Collections.emptyList();
+
+        GeotabApiRequest.Params params = new GeotabApiRequest.Params();
+        params.setTypeName(LOG_RECORD_FEED_TYPE);
+
+        String fromVersion = lastProcessedVersions.computeIfAbsent(device.getId(), k -> new ConcurrentHashMap<>())
+                .get(STATUS_DATA_FEED_TYPE);
+
+        Map<String, Object> searchParams = new HashMap<>();
+        searchParams.put("deviceSearch", Map.of("id", device.getId()));
+        searchParams.put("diagnosticSearch", Map.of("id", DIAGNOSTIC_ODOMETER_ID)); // Filter for Odometer data
+
+        if (fromVersion != null) {
+            params.setFromVersion(fromVersion);
+            System.out.println("    Odometer: Using fromVersion: " + fromVersion);
+        } else {
+            OffsetDateTime twentyFourHoursAgo = OffsetDateTime.now(ZoneOffset.UTC).minusHours(24); // Adjust as needed
+            searchParams.put("fromDate", twentyFourHoursAgo.format(ISO_Z_FORMATTER));
+            System.out.println("    Odometer: No existing version. Seeding fromDate: " + twentyFourHoursAgo);
+        }
+        params.setSearch(searchParams);
+
+        // Max results per call, important for large data sets
+        params.setResultsLimit(50000); // Max for LogRecord is 50,000
+
+        params.setCredentials(getAuthenticatedCredentials());
+
+        GeotabApiRequest request = new GeotabApiRequest("GetFeed", params);
+        JsonNode responseNode = geotabApiClient.call(objectMapper.convertValue(request, Map.class));
+
+        if (responseNode.has("result")) {
+            TypeFactory typeFactory = objectMapper.getTypeFactory();
+            FeedResult<StatusData> feedResult = objectMapper.readValue(
+                    responseNode.get("result").traverse(),
+                    typeFactory.constructParametricType(FeedResult.class, StatusData.class)
+            );
+
+            // Filter data to ensure it's specifically Odometer (in case API returns other types despite diagnosticSearch)
+            newOdometerStatusData = feedResult.getData() != null ?
+                    feedResult.getData().stream()
+                            .filter(sd -> sd.getDiagnostic() != null && DIAGNOSTIC_ODOMETER_ID.equals(sd.getDiagnostic().getId()))
+                            .collect(Collectors.toList()) :
+                    Collections.emptyList();
+            String newToVersion = feedResult.getToVersion();
+
+            if (!newOdometerStatusData.isEmpty()) {
+                System.out.println("    Retrieved " + newOdometerStatusData.size() + " new Odometer StatusData.");
+            } else {
+                System.out.println("    No new Odometer StatusData found.");
+            }
+
+            // Always update toVersion
+            if (newToVersion != null) {
+                lastProcessedVersions.computeIfAbsent(device.getId(), k -> new ConcurrentHashMap<>())
+                        .put(STATUS_DATA_FEED_TYPE, newToVersion);
+            }
+
+        } else if (responseNode.has("error")) {
+            System.err.println("    Error fetching Odometer StatusData for device " + device.getId() + ": " + responseNode.get("error").toString());
+        } else {
+            System.err.println("    Unexpected API response for Odometer StatusData for device " + device.getId() + ": " + responseNode.toString());
+        }
+
+        return newOdometerStatusData;
+    }
+
+    /**
+     * Matches LogRecords with the closest Odometer StatusData by timestamp.
+     * Prefers odometer readings that occur at or before the log record's timestamp.
      *
-     * @param device The device the log records belong to.
-     * @param logRecords The list of new LogRecord objects to append.
+     * @param device The device being processed.
+     * @param logRecords The list of LogRecords to enrich.
+     * @param odometerData The list of available Odometer StatusData for matching.
+     * @return A list of EnrichedLogRecord objects.
+     */
+    private List<EnrichedLogRecord> matchLogRecordsWithOdometer(Device device, List<LogRecord> logRecords, List<StatusData> odometerData) {
+        System.out.println("  Matching LogRecords with Odometer data...");
+
+        List<EnrichedLogRecord> enrichedRecords = new ArrayList<>();
+        String vin = device.getVehicleIdentificationNumber();
+
+        // Sort odometer data by timestamp for efficient searching
+        // This is crucial for finding the "closest previous" odometer reading
+        odometerData.sort(Comparator.comparing(StatusData::getDateTime));
+
+        for (LogRecord log : logRecords) {
+            Double matchedOdometerValue = null;
+            StatusData closestOdometer = null;
+            Duration minDiff = ODOMETER_MATCH_THRESHOLD; // Max allowed difference
+
+            // Iterate through sorted odometer data to find the closest value
+            for (StatusData odometer : odometerData) {
+                // Only consider odometer readings that are at or before the log record's timestamp
+                if (odometer.getDateTime().isAfter(log.getDateTime())) {
+                    break; // Since data is sorted, no need to check further
+                }
+
+                Duration diff = Duration.between(odometer.getDateTime(), log.getDateTime()).abs();
+
+                // Find the closest odometer reading *before or at* the log record's timestamp
+                // If multiple are equally close, the last one found (closest to log.dateTime) is chosen
+                if (diff.compareTo(minDiff) < 0) {
+                    closestOdometer = odometer;
+                    minDiff = diff;
+                }
+            }
+
+            if (closestOdometer != null) {
+                matchedOdometerValue = closestOdometer.getData();
+            }
+
+            // Create the enriched record
+            enrichedRecords.add(new EnrichedLogRecord(
+                    device.getId(),
+                    vin,
+                    log.getDateTime(),
+                    log.getLatitude(),
+                    log.getLongitude(),
+                    matchedOdometerValue
+            ));
+        }
+        System.out.println("  Matched " + enrichedRecords.size() + " LogRecords with Odometer data.");
+        return enrichedRecords;
+    }
+
+    /**
+     * Appends new EnrichedLogRecord data to the vehicle's final CSV file.
+     *
+     * @param device The device the records belong to.
+     * @param enrichedRecords The list of new EnrichedLogRecord objects to append.
      * @throws IOException If there's an error writing to the CSV file.
      */
-    private void appendLogRecordsToCsv(Device device, List<LogRecord> logRecords) throws IOException {
-        String filename = device.getId() + "_log_records.csv"; // CSV for LogRecords only
+    private void appendEnrichedRecordsToCsv(Device device, List<EnrichedLogRecord> enrichedRecords) throws IOException {
+        String filename = device.getId() + "_enriched_data.csv"; // Final merged CSV
         Path filePath = Paths.get(outputDirectory, filename);
 
         // Ensure the output directory exists
         Files.createDirectories(filePath.getParent());
 
         boolean fileExists = Files.exists(filePath);
+        boolean fileIsEmpty = !fileExists || Files.size(filePath) == 0;
 
         try (CSVWriter writer = new CSVWriter(new FileWriter(filePath.toFile(), true))) { // 'true' for append mode
-            if (!fileExists || Files.size(filePath) == 0) {
+            if (fileIsEmpty) {
                 // Write header only if the file is new or empty
-                writer.writeNext(new String[]{"Vehicle ID", "Timestamp", "Latitude", "Longitude"});
+                writer.writeNext(new String[]{"Vehicle ID", "VIN", "Timestamp", "Latitude", "Longitude", "OdometerValue"});
             }
 
-            for (LogRecord record : logRecords) {
-                // Prepare data for CSV row
-                String vehicleId = device.getId(); // Use the primary device ID
-                String timestamp = record.getDateTime().format(ISO_Z_FORMATTER); // ISO-8601 format with Z for UTC
-                String latitude = String.valueOf(record.getLatitude());
-                String longitude = String.valueOf(record.getLongitude());
-
-                writer.writeNext(new String[]{vehicleId, timestamp, latitude, longitude});
+            for (EnrichedLogRecord record : enrichedRecords) {
+                writer.writeNext(record.toCsvRow());
             }
-            System.out.println("  Appended " + logRecords.size() + " LogRecords to " + filename);
+            System.out.println("  Appended " + enrichedRecords.size() + " enriched records to " + filename);
         }
     }
+
 
     // --- Getter for discovered vehicles (for testing/inspection) ---
     public Map<String, Device> getDiscoveredVehicles() {
@@ -402,41 +556,4 @@ public class GeotabDataService {
             throw new IOException("Unexpected Geotab API response during device discovery: " + responseNode.toString());
         }
     }
-
-    /**
-     * Getter for the map of discovered vehicles.
-     * @return A map of Device ID to Device object.
-     */
-//    public Map<String, Device> getDiscoveredVehicles() {
-//        return discoveredVehicles;
-//    }
-
-    /**
-     * Helper method to retrieve the last processed version for a specific feed type
-     * and device. This will be used in Phase 2 for incremental updates.
-     * @param deviceId The ID of the device.
-     * @param feedTypeName The type of feed (e.g., "LogRecord", "StatusData").
-     * @return The last version string, or null if not found.
-     */
-//    public String getLastVersion(String deviceId, String feedTypeName) {
-//        return lastProcessedVersions.computeIfAbsent(deviceId, k -> new ConcurrentHashMap<>())
-//                .get(feedTypeName);
-//    }
-
-    /**
-     * Helper method to set (store) the last processed version for a specific feed type
-     * and device. This will be used in Phase 2 for incremental updates.
-     * @param deviceId The ID of the device.
-     * @param feedTypeName The type of feed.
-     * @param version The new version string to store.
-     */
-//    public void setLastVersion(String deviceId, String feedTypeName, String version) {
-//        lastProcessedVersions.computeIfAbsent(deviceId, k -> new ConcurrentHashMap<>())
-//                .put(feedTypeName, version);
-//    }
-
-    // IMPORTANT NOTE: The 'lastProcessedVersions' map currently only stores state in memory.
-    // For a robust, containerized solution, this state MUST be persisted to disk (e.g., a JSON file
-    // in the mounted volume or a lightweight embedded database) so that it is not lost when
-    // the container restarts. This persistence logic will be crucial for Phase 2.
 }

@@ -90,7 +90,4 @@ public class LogRecord {
                 '}';
     }
 
-    public boolean hasAllRequiredFields() {
-        return dateTime != null && device != null && device.getId() != null && latitude != 0 && longitude != 0;
-    }
 }

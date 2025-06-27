@@ -4,16 +4,13 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 /**
  * Represents a Vehicle (Device) entity from the Geotab API.
- * JsonIgnoreProperties(ignoreUnknown = true) is important to prevent
- * Jackson from failing if the API returns fields we haven't mapped.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class Device {
     public String id;
-    public String name; // Often used as the "Vehicle ID" display name
+    public String name;
     public String vehicleIdentificationNumber; // The VIN
 
-    // --- Getters and Setters (good practice) ---
     public String getId() {
         return id;
     }

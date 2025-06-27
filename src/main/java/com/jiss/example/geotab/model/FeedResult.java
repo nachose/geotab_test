@@ -10,7 +10,7 @@ import java.util.List;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class FeedResult<T> {
     public List<T> data;
-    public String toVersion; // The version string to use as 'fromVersion' in the next call
+    public String toVersion;
 
     public List<T> getData() {
         return data;

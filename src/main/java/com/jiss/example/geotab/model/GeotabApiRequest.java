@@ -10,10 +10,10 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * In a professional setting, probably have two classes, even if there is some code repetition.
  */
 public class GeotabApiRequest {
-    private String jsonrpc = "2.0"; // Standard JSON-RPC version
+    private String jsonrpc = "2.0";
     private String method;           // The API method to call (e.g., "Get", "GetFeed")
     private Params params;
-    private int id = 1;              // Request ID, can be a static value for simple apps
+    private int id = 1;
 
     public static class Params {
         private String typeName;
