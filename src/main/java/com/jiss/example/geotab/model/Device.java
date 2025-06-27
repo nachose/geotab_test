@@ -2,10 +2,48 @@ package com.jiss.example.geotab.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
+/**
+ * Represents a Vehicle (Device) entity from the Geotab API.
+ * JsonIgnoreProperties(ignoreUnknown = true) is important to prevent
+ * Jackson from failing if the API returns fields we haven't mapped.
+ */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class Device {
     public String id;
-    public String name; // This might be "Vehicle ID"
-    public String vehicleIdentificationNumber; // This is the VIN
-    // Add other fields you might need from the Device object
+    public String name; // Often used as the "Vehicle ID" display name
+    public String vehicleIdentificationNumber; // The VIN
+
+    // --- Getters and Setters (good practice) ---
+    public String getId() {
+        return id;
+    }
+
+    public void setId(String id) {
+        this.id = id;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public String getVehicleIdentificationNumber() {
+        return vehicleIdentificationNumber;
+    }
+
+    public void setVehicleIdentificationNumber(String vehicleIdentificationNumber) {
+        this.vehicleIdentificationNumber = vehicleIdentificationNumber;
+    }
+
+    @Override
+    public String toString() {
+        return "Device{" +
+                "id='" + id + '\'' +
+                ", name='" + name + '\'' +
+                ", VIN='" + vehicleIdentificationNumber + '\'' +
+                '}';
+    }
 }

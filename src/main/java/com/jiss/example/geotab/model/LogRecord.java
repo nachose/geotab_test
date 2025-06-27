@@ -5,21 +5,57 @@ import java.time.OffsetDateTime;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class LogRecord {
-    private String id;
+    private double latitude;
+    private double longitude;
+    private int speed;
+    private String dateTimeRaw;
     private OffsetDateTime dateTime;
-    private Double latitude;
-    private Double longitude;
-    private Double odometer;
+    private DeviceRef device;
+    private String id;
 
-    public LogRecord() {
+    public double getLatitude() {
+        return latitude;
     }
 
-    public LogRecord(String id, OffsetDateTime dateTime, Double latitude, Double longitude, Double odometer) {
-        this.id = id;
-        this.dateTime = dateTime;
+    public void setLatitude(double latitude) {
         this.latitude = latitude;
+    }
+
+    public double getLongitude() {
+        return longitude;
+    }
+
+    public void setLongitude(double longitude) {
         this.longitude = longitude;
-        this.odometer = odometer;
+    }
+
+    public int getSpeed() {
+        return speed;
+    }
+
+    public void setSpeed(int speed) {
+        this.speed = speed;
+    }
+
+    public String getDateTimeRaw() {
+        return dateTimeRaw;
+    }
+
+    public void setDateTime(String dateTimeRaw) {
+        this.dateTimeRaw = dateTimeRaw;
+        this.dateTime = OffsetDateTime.parse(dateTimeRaw);
+    }
+
+    public OffsetDateTime getDateTime() {
+        return dateTime;
+    }
+
+    public DeviceRef getDevice() {
+        return device;
+    }
+
+    public void setDevice(DeviceRef device) {
+        this.device = device;
     }
 
     public String getId() {
@@ -30,39 +66,31 @@ public class LogRecord {
         this.id = id;
     }
 
-    public OffsetDateTime getDateTime() {
-        return dateTime;
+    public static class DeviceRef {
+        private String id;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(String id) {
+            this.id = id;
+        }
     }
 
-    public void setDateTime(OffsetDateTime dateTime) {
-        this.dateTime = dateTime;
-    }
-
-    public Double getLatitude() {
-        return latitude;
-    }
-
-    public void setLatitude(Double latitude) {
-        this.latitude = latitude;
-    }
-
-    public Double getLongitude() {
-        return longitude;
-    }
-
-    public void setLongitude(Double longitude) {
-        this.longitude = longitude;
-    }
-
-    public Double getOdometer() {
-        return odometer;
-    }
-
-    public void setOdometer(Double odometer) {
-        this.odometer = odometer;
+    @Override
+    public String toString() {
+        return "LogRecord{" +
+                "id='" + id + '\'' +
+                ", dateTime=" + dateTime +
+                ", latitude=" + latitude +
+                ", longitude=" + longitude +
+                ", speed=" + speed +
+                ", deviceId='" + (device != null ? device.getId() : "null") + '\'' +
+                '}';
     }
 
     public boolean hasAllRequiredFields() {
-        return dateTime != null && latitude != null && longitude != null && odometer != null;
+        return dateTime != null && device != null && device.getId() != null && latitude != 0 && longitude != 0;
     }
 }
