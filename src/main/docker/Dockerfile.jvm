@@ -80,9 +80,11 @@
 ###
 # ---- Build stage ----
 FROM maven:3.9.6-eclipse-temurin-21 AS build
+RUN apt-get update && apt-get install -y git
 ARG GIT_REPO=https://github.com/nachose/geotab_test.git
 ARG GIT_TAG=main
-RUN git clone $GIT_REPO . && git checkout $GIT_TAG
+WORKDIR /workspace
+RUN echo "Cloning $GIT_REPO..." && git clone $GIT_REPO . && echo "Checking out $GIT_TAG..." && git checkout $GIT_TAG
 RUN echo "Building the application from tag $GIT_TAG..." && mvn package -DskipTests
 
 # --- Run stage ---
@@ -92,12 +94,14 @@ ENV LANGUAGE='en_US:en'
 
 
 # We make four distinct layers so if there are application changes the library layers can be re-used
-COPY --chown=185 target/quarkus-app/lib/ /deployments/lib/
-COPY --chown=185 target/quarkus-app/*.jar /deployments/
-COPY --chown=185 target/quarkus-app/app/ /deployments/app/
-COPY --chown=185 target/quarkus-app/quarkus/ /deployments/quarkus/
+COPY --from=build --chown=185 /workspace/target/quarkus-app/lib/ /deployments/lib/
+COPY --from=build --chown=185 /workspace/target/quarkus-app/*.jar /deployments/
+COPY --from=build --chown=185 /workspace/target/quarkus-app/app/ /deployments/app/
+COPY --from=build --chown=185 /workspace/target/quarkus-app/quarkus/ /deployments/quarkus/
 USER root
 RUN mkdir -p /app/data/vehicle-backups
+RUN chown -R 185:185 /deployments /app/data/vehicle-backups \
+    && chmod -R g+rwX /deployments /app/data/vehicle-backups
 
 EXPOSE 8080
 # RUN microdnf install -y git && microdnf clean all
