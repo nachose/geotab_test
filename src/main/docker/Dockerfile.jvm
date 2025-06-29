@@ -78,6 +78,14 @@
 #   accessed directly. (example: "foo.example.com,bar.example.com")
 #
 ###
+# ---- Build stage ----
+FROM maven:3.9.6-eclipse-temurin-21 AS build
+ARG GIT_REPO=https://github.com/nachose/geotab_test.git
+ARG GIT_TAG=main
+RUN git clone $GIT_REPO . && git checkout $GIT_TAG
+RUN echo "Building the application from tag $GIT_TAG..." && mvn package -DskipTests
+
+# --- Run stage ---
 FROM registry.access.redhat.com/ubi9/openjdk-21:1.21
 
 ENV LANGUAGE='en_US:en'
