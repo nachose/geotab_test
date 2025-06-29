@@ -1,58 +1,84 @@
+# Contents
+
+- [geotab-backup](#geotab-backup)
+  - [Running the application in dev mode](#running-the-application-in-dev-mode)
+  - [SDK.](#sdk)
+  - [Calls limit.](#calls-limit)
+  - [Multicall.](#multicall)
+  - [Solution.](#solution)
+
+
 # geotab-backup
 
-This project uses Quarkus, the Supersonic Subatomic Java Framework.
-
-If you want to learn more about Quarkus, please visit its website: <https://quarkus.io/>.
+This service is done in quarkus. It is the one I have been working with.
 
 ## Running the application in dev mode
 
-You can run your application in dev mode that enables live coding using:
+Run in local, if you have quarkus installed:
 
 ```shell script
 ./mvnw quarkus:dev
 ```
 
-> **_NOTE:_**  Quarkus now ships with a Dev UI, which is available in dev mode only at <http://localhost:8080/q/dev/>.
+data will be saved in the directory data/vehicles-backup
 
-## Packaging and running the application
+## SDK.
 
-The application can be packaged using:
+Too late I found out that an API client for the API existed. As I had already done most of it using
+http calls, I decided not to do again. If I did it again, I would of course use the SDK, but too
+late for that now.
 
-```shell script
-./mvnw package
+https://github.com/Geotab/sdk-java-samples
+
+## Calls limit.
+
+As there are 50 devices, and I am doing 2 requests for each of them, that means 100 requests a
+minute. As there is a limit of 60 requests by minute, I very soon reached that limit.
+
+![Calls limit](img/single_call_quota_exceeded.jpg)
+
+## Multicall.
+
+I tried to circumvent such limit by making a multicall with all the requests agregated in one. And
+it worked for a while, until it stopped working. I had read in the documentation that maybe in the
+future you would add a limit to the multicalls so that the limit could not be surpased. It seems
+that the future is now, and that limit is already in place, although calculated differently, because
+as I told before, there was a while where it was working.
+I added a tag for the multicall version, if you want to check yourself. You could build the
+container using that tag.
+Tag: `multicall`
+
+![Multiple calls limit](img/multicall_quota_exceeded.jpg)
+
+## Solution.
+
+Not really a solution. I went back to the single calls version, and what I do is I revert the
+vehicles every time, so that are different vehicles which don't have quota enough. That way all the
+vehicles should be processed every 2 minutes instead of 1.
+
+## Building and running the container.
+
+- First clone the repository:
+
+`git clone https://github.com/nachose/geotab_test.git`
+
+- Create a directory to save the data.
+
+I thought it convenient to have the data available outside the container.
+
 ```
-
-It produces the `quarkus-run.jar` file in the `target/quarkus-app/` directory.
-Be aware that it’s not an _über-jar_ as the dependencies are copied into the `target/quarkus-app/lib/` directory.
-
-The application is now runnable using `java -jar target/quarkus-app/quarkus-run.jar`.
-
-If you want to build an _über-jar_, execute the following command:
-
-```shell script
-./mvnw package -Dquarkus.package.jar.type=uber-jar
+mkdir -p $(pwd)/vehicle-backups
+sudo chmod 777 $(pwd)/vehicle-backups
 ```
+- Create the image, passing as parameter the tag `not_mcv0.1`:
 
-The application, packaged as an _über-jar_, is now runnable using `java -jar target/*-runner.jar`.
+`docker build --progress=plain --build-arg GIT_TAG=not_mcv0.1 -f src/main/docker/Dockerfile.jvm -t geotab-backup-app .`
 
-## Creating a native executable
+Depending on how you have installed docker, you might need to sudo it:
 
-You can create a native executable using:
+`sudo docker build --progress=plain --build-arg GIT_TAG=not_mcv0.1 -f src/main/docker/Dockerfile.jvm -t geotab-backup-app .`
 
-```shell script
-./mvnw package -Dnative
-```
+- Run the image:
 
-Or, if you don't have GraalVM installed, you can run the native executable build in a container using:
+`docker run -i --rm -p 8080:8080 -v $(pwd)/vehicle-backups:/app/data/vehicle-backups geotab-backup-app`
 
-```shell script
-./mvnw package -Dnative -Dquarkus.native.container-build=true
-```
-
-You can then execute your native executable with: `./target/geotab-backup-1.0.0-SNAPSHOT-runner`
-
-If you want to learn more about building native executables, please consult <https://quarkus.io/guides/maven-tooling>.
-
-## Related Guides
-
-- Scheduler ([guide](https://quarkus.io/guides/scheduler)): Schedule jobs and tasks
