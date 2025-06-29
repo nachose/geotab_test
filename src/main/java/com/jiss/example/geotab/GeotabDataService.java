@@ -208,7 +208,6 @@ public class GeotabDataService {
             login(); // Step 1: Authenticate
             discoverAllVehicles(); // Step 2: Discover vehicles
             loadLastProcessedVersions(); // Step 3: Load persistence state
-            reverseVehicles();
 
             LOG.info("Phase 1: Initialization complete. Found " + discoveredVehicles.size() + " vehicles.");
             if (!discoveredVehicles.isEmpty()) {
@@ -374,12 +373,6 @@ public class GeotabDataService {
         }
     }
 
-    private void reverseVehicles () {
-        System.out.println("Reversing discovered vehicles:");
-        List<Device> reversedVehicles = new ArrayList<>(discoveredVehicles.values());
-        Collections.reverse(reversedVehicles);
-        //reversedVehicles.forEach(device -> System.out.println("  " + device.getId() + ": " + device.getName()));
-    }
     /**
      * Helper to create parameters for GetFeed calls.
      * @param device The device for the search.
