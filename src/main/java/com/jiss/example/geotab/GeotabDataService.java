@@ -371,7 +371,6 @@ public class GeotabDataService {
             LOG.info("Error during scheduled vehicle data backup: " + e.getMessage());
             e.printStackTrace();
         }
-        reverseVehicles();
     }
 
     /**
