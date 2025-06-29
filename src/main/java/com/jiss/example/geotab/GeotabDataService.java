@@ -204,7 +204,6 @@ public class GeotabDataService {
             login(); // Step 1: Authenticate
             discoverAllVehicles(); // Step 2: Discover vehicles
             loadLastProcessedVersions(); // Step 3: Load persistence state
-            reverseVehicles();
 
             System.out.println("Phase 1: Initialization complete. Found " + discoveredVehicles.size() + " vehicles.");
             if (!discoveredVehicles.isEmpty()) {
@@ -259,6 +258,7 @@ public class GeotabDataService {
             e.printStackTrace();
             // This ensures the scheduler continues to run even if one iteration fails.
         }
+        reverseVehicles();
     }
 
     private void reverseVehicles () {
