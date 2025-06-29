@@ -46,7 +46,7 @@ that the future is now, and that limit is already in place, although calculated 
 as I told before, there was a while where it was working.
 I added a tag for the multicall version, if you want to check yourself. You could build the
 container using that tag.
-Tag: `multicall`
+Tag: `mcall`
 
 ![Multiple calls limit](img/multicall_quota_exceeded.jpg)
 
