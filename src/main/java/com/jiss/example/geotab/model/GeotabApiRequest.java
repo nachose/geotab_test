@@ -13,7 +13,9 @@ public class GeotabApiRequest {
     private String jsonrpc = "2.0";
     private String method;           // The API method to call (e.g., "Get", "GetFeed")
     private Params params;
-    private int id = 1;
+
+    private static int counter = 1;
+    private int id = counter++;
 
     public static class Params {
         private String typeName;

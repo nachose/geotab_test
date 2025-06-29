@@ -38,7 +38,6 @@ import java.util.HashMap;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Main service for interacting with the Geotab API and managing vehicle data backup.
@@ -56,6 +55,7 @@ public class GeotabDataService {
 
     // Define a threshold for matching odometer readings (e.g., within 5 seconds)
     private static final Duration ODOMETER_MATCH_THRESHOLD = Duration.ofSeconds(10);
+    private static final int MAX_LOG_RECORDS_PER_CALL = 50000; // Max for LogRecord feed
 
 
 
@@ -78,11 +78,11 @@ public class GeotabDataService {
     private String sessionId;
 
     // We'll manage discovered devices here
-    private final Map<String, Device> discoveredVehicles = new ConcurrentHashMap<>();
+    private final Map<String, Device> discoveredVehicles = new HashMap<>();
 
     // This map will store the last processed version for each feed type per vehicle
     // Key: vehicleId, Value: Map<FeedTypeName, LastVersionString>
-    private final Map<String, Map<String, String>> lastProcessedVersions = new ConcurrentHashMap<>();
+    private final Map<String, Map<String, String>> lastProcessedVersions = new HashMap<>();
 
     // ObjectMapper for JSON serialization/deserialization.
     private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
@@ -136,9 +136,7 @@ public class GeotabDataService {
 
         if (responseNode.has("result")) {
             LoginResponse loginResponse = objectMapper.treeToValue(responseNode, LoginResponse.class);
-            System.out.println("Login response: " + loginResponse);
             LoginResult loginResult = loginResponse.getResult();
-            System.out.println("Login result: " + loginResult);
             this.sessionId = loginResult.getSessionId();
             System.out.println("Successfully logged in to Geotab API. Session ID obtained. : " + sessionId);
         } else if (responseNode.has("error")) {
@@ -158,13 +156,9 @@ public class GeotabDataService {
         if (Files.exists(versionsPath)) {
             try {
                 String json = Files.readString(versionsPath);
-                // The stored structure is Map<String, Map<String, String>>
                 TypeFactory typeFactory = objectMapper.getTypeFactory();
-                // Construct JavaType for the key (String)
                 JavaType keyType = typeFactory.constructType(String.class);
-                // Construct the inner Map<String, String> type
                 JavaType innerMapType = typeFactory.constructMapType(HashMap.class, String.class, String.class);
-                // Construct the outer Map<String, Map<String, String>> type
                 MapType mapType = typeFactory.constructMapType(HashMap.class, keyType, innerMapType);
                 Map<String, Map<String, String>> loadedMap = objectMapper.readValue(json, mapType);
                 lastProcessedVersions.clear();
@@ -172,7 +166,6 @@ public class GeotabDataService {
                 System.out.println("Loaded last processed versions from " + VERSIONS_FILE_NAME);
             } catch (IOException e) {
                 System.err.println("Error loading last processed versions: " + e.getMessage());
-                // Continue with empty map if load fails
             }
         } else {
             System.out.println("No existing versions file found. Starting fresh.");
@@ -249,14 +242,12 @@ public class GeotabDataService {
                 } else {
                     System.out.println("  No new LogRecords to enrich for Device ID: " + device.getId());
                 }
-                //processLogRecordsForVehicle(device);
             }
             saveLastProcessedVersions(); // Save state after processing all vehicles
             System.out.println("--- LogRecord backup completed ---");
         } catch (Exception e) {
             System.err.println("Error during scheduled LogRecord backup: " + e.getMessage());
             e.printStackTrace();
-            // This ensures the scheduler continues to run even if one iteration fails.
         }
         reverseVehicles();
     }
@@ -265,7 +256,6 @@ public class GeotabDataService {
         System.out.println("Reversing discovered vehicles:");
         List<Device> reversedVehicles = new ArrayList<>(discoveredVehicles.values());
         Collections.reverse(reversedVehicles);
-        //reversedVehicles.forEach(device -> System.out.println("  " + device.getId() + ": " + device.getName()));
     }
     /**
      * Processes LogRecord data for a single vehicle using GetFeed.
@@ -283,7 +273,7 @@ public class GeotabDataService {
         params.setTypeName(LOG_RECORD_FEED_TYPE);
 
         // Get the last processed version for this device's LogRecord feed
-        String fromVersion = lastProcessedVersions.computeIfAbsent(device.getId(), k -> new ConcurrentHashMap<>())
+        String fromVersion = lastProcessedVersions.computeIfAbsent(device.getId(), k -> new HashMap<>())
                 .get(LOG_RECORD_FEED_TYPE);
 
         // Define search parameters
@@ -304,7 +294,7 @@ public class GeotabDataService {
         params.setSearch(searchParams);
 
         // Max results per call, important for large data sets
-        params.setResultsLimit(50000); // Max for LogRecord is 50,000
+        params.setResultsLimit(MAX_LOG_RECORDS_PER_CALL); // Max for LogRecord is 50,000
 
         params.setCredentials(getAuthenticatedCredentials());
 
@@ -333,7 +323,7 @@ public class GeotabDataService {
             // Even if no new data, update toVersion to current state to avoid re-fetching old empty range
             // This is crucial for GetFeed to advance correctly even with no new records.
             if (newToVersion != null) {
-                lastProcessedVersions.computeIfAbsent(device.getId(), k -> new ConcurrentHashMap<>())
+                lastProcessedVersions.computeIfAbsent(device.getId(), k -> new HashMap<>())
                         .put(LOG_RECORD_FEED_TYPE, newToVersion);
             }
 
@@ -360,7 +350,7 @@ public class GeotabDataService {
         GeotabApiRequest.Params params = new GeotabApiRequest.Params();
         params.setTypeName(STATUS_DATA_FEED_TYPE);
 
-        String fromVersion = lastProcessedVersions.computeIfAbsent(device.getId(), k -> new ConcurrentHashMap<>())
+        String fromVersion = lastProcessedVersions.computeIfAbsent(device.getId(), k -> new HashMap<>())
                 .get(STATUS_DATA_FEED_TYPE);
 
         Map<String, Object> searchParams = new HashMap<>();
@@ -378,7 +368,7 @@ public class GeotabDataService {
         params.setSearch(searchParams);
 
         // Max results per call, important for large data sets
-        params.setResultsLimit(50000); // Max for LogRecord is 50,000
+        params.setResultsLimit(MAX_LOG_RECORDS_PER_CALL); // Max for LogRecord is 50,000
 
         params.setCredentials(getAuthenticatedCredentials());
 
@@ -408,7 +398,7 @@ public class GeotabDataService {
 
             // Always update toVersion
             if (newToVersion != null) {
-                lastProcessedVersions.computeIfAbsent(device.getId(), k -> new ConcurrentHashMap<>())
+                lastProcessedVersions.computeIfAbsent(device.getId(), k -> new HashMap<>())
                         .put(STATUS_DATA_FEED_TYPE, newToVersion);
             }
 
@@ -518,12 +508,12 @@ public class GeotabDataService {
 
     // --- Helper methods for lastProcessedVersions (might be useful for tests) ---
     public String getLastVersion(String deviceId, String feedTypeName) {
-        return lastProcessedVersions.computeIfAbsent(deviceId, k -> new ConcurrentHashMap<>())
+        return lastProcessedVersions.computeIfAbsent(deviceId, k -> new HashMap<>())
                 .get(feedTypeName);
     }
 
     public void setLastVersion(String deviceId, String feedTypeName, String version) {
-        lastProcessedVersions.computeIfAbsent(deviceId, k -> new ConcurrentHashMap<>())
+        lastProcessedVersions.computeIfAbsent(deviceId, k -> new HashMap<>())
                 .put(feedTypeName, version);
     }
 
