@@ -10,7 +10,7 @@
 
 # geotab-backup
 
-This service is done in quarkus. It is the one I have been working with.
+This service is done in quarkus. It is the framework I have been working with.
 
 ## Running the application in dev mode
 
@@ -32,8 +32,8 @@ https://github.com/Geotab/sdk-java-samples
 
 ## Calls limit.
 
-As there are 50 devices, and I am doing 2 requests for each of them, that means 100 requests a
-minute. As there is a limit of 60 requests by minute, I very soon reached that limit.
+As there are 50 devices in the database, and I am doing 2 requests for each of them, that means 100
+requests a minute. As there is a limit of 60 requests by minute, I very soon reached that limit.
 
 ![Calls limit](img/single_call_quota_exceeded.jpg)
 
@@ -53,8 +53,8 @@ Tag: `mcall`
 ## Solution.
 
 Not really a solution. I went back to the single calls version, and what I do is I revert the
-vehicles every time, so that are different vehicles which don't have quota enough. That way all the
-vehicles should be processed every 2 minutes instead of 1.
+vehicles list every time, so that the vehicles that I'm not able to retrieve are different every
+time. That way all the vehicles should be processed every 2 minutes instead of 1.
 
 ## Building and running the container.
 
