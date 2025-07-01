@@ -41,7 +41,7 @@ import java.util.Map;
 
 /**
  * Main service for interacting with the Geotab API and managing vehicle data backup.
- * This class handles Phase 1: Initial Vehicle Discovery, including authentication.
+ * This class handles initial Vehicle Discovery, including authentication.
  */
 @ApplicationScoped
 public class GeotabDataService {
@@ -214,7 +214,7 @@ public class GeotabDataService {
 
 
     /**
-     * Phase 2A: Scheduled task to incrementally backup LogRecord data for each vehicle.
+     * Scheduled task to incrementally backup LogRecord data for each vehicle.
      * Runs every minute based on 'geotab.backup.schedule' cron expression.
      */
     @Scheduled(cron = "{geotab.backup.schedule}")
